@@ -1,165 +1,197 @@
+# 🤖 Intelligent RAG Q&A Chatbot
 
-# Intelligent RAG Q&A Chatbot
+The **Intelligent RAG Q&A Chatbot** is a powerful document-based assistant that allows you to upload `.csv` and `.txt` files, extract structured summaries, and ask AI-powered questions over them using advanced **Retrieval-Augmented Generation (RAG)**.
 
-A powerful Retrieval-Augmented Generation (RAG) chatbot built with Python and Streamlit that can process multiple document formats and answer questions using AI.
+---
 
-## Features
+## 📸 Screenshots
 
-- **Multi-format Document Support**: PDF, CSV, TXT, and image files (PNG, JPG, JPEG)
-- **OCR Capabilities**: Extract text from images using Tesseract
-- **Vector Search**: Semantic search using Supabase vector database
-- **AI-Powered Responses**: Integration with OpenRouter API (Claude, Gemini, etc.)
-- **Dark Theme UI**: Clean and modern Streamlit interface
-- **Real-time Processing**: Upload and query documents instantly
+| Chatting with uploaded document | File Upload Panel | Streamlit UI |
+|-------------------------------|--------------------|---------------|
+| ![](Screenshot/Chatbot.PNG)   | ![](Screenshot/Fie_Uploading.PNG) | ![](Screenshot/RAG.PNG) |
 
-## Setup Instructions
+---
 
-### 1. Environment Setup
+## 🧠 Key Features
+
+- 🔍 Ask questions like:
+  - “What is this dataset about?”
+  - “How many rows and columns?”
+  - “What are the column types or ranges?”
+- 📥 Upload `.csv` and `.txt` files
+- 🧾 Automatic summarization and chunking of documents
+- 🧠 Vector embeddings via `sentence-transformers`
+- 🧪 Stores and queries vector embeddings using **Supabase with pgvector**
+- 🤖 Uses **Claude 3 Haiku** (via OpenRouter API) to answer questions
+- ❌ Delete individual responses or 🗑️ clear chat history
+- 📊 Stats: Total documents & questions tracked
+- 🌑 Dark themed Streamlit UI
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer           | Tool / Library                        |
+|------------------|----------------------------------------|
+| UI & Chat Flow   | `Streamlit`                            |
+| File Parsing     | `Pandas`, `Python`                     |
+| Vector Store     | `Supabase`, `pgvector`                 |
+| Embedding Model  | `sentence-transformers`                |
+| LLM Backend      | `Anthropic Claude-3-Haiku via OpenRouter` |
+| API Handling     | `requests`, `.env`, `python-dotenv`    |
+
+---
+
+## 🚀 Setup Guide
+
+### 1️⃣ Clone this repo
 
 ```bash
-# Create virtual environment
-python -m venv venv
+git clone https://github.com/yourusername/intelligent-rag-chatbot.git
+cd intelligent-rag-chatbot
+```
 
-# Activate virtual environment
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
+### 2️⃣ Install requirements
 
-# Install dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Supabase Configuration
+### 3️⃣ Add environment variables
 
-1. Go to [Supabase](https://supabase.com/) and create a new project
-2. In the SQL Editor, run this query to create the documents table:
+Create a `.env` file in the root folder:
 
-```sql
--- Enable the pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Create the documents table
-CREATE TABLE documents (
-    id SERIAL PRIMARY KEY,
-    content TEXT NOT NULL,
-    embedding VECTOR(384),
-    metadata JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create index for similarity search
-CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-
--- Create the match_documents function for similarity search
-CREATE OR REPLACE FUNCTION match_documents(
-    query_embedding VECTOR(384),
-    match_threshold FLOAT DEFAULT 0.3,
-    match_count INT DEFAULT 3
-)
-RETURNS TABLE(
-    id BIGINT,
-    content TEXT,
-    metadata JSONB,
-    similarity FLOAT
-)
-LANGUAGE sql
-AS $$
-    SELECT
-        id,
-        content,
-        metadata,
-        1 - (documents.embedding <=> query_embedding) AS similarity
-    FROM documents
-    WHERE 1 - (documents.embedding <=> query_embedding) > match_threshold
-    ORDER BY documents.embedding <=> query_embedding
-    LIMIT match_count;
-$$;
+```env
+OPENROUTER_API_KEY=your_openrouter_api_key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-3. Set environment variables:
+Alternatively, use the provided `.env.example` as a template:
 
 ```bash
-export SUPABASE_URL="your-supabase-project-url"
-export SUPABASE_ANON_KEY="your-supabase-anon-key"
+cp .env.example .env
 ```
 
-### 3. Install Tesseract (for OCR)
-
-**Windows:**
-- Download from: https://github.com/UB-Mannheim/tesseract/wiki
-- Add to PATH
-
-**macOS:**
-```bash
-brew install tesseract
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install tesseract-ocr
-```
-
-### 4. Run the Application
+### 4️⃣ Run the Streamlit app
 
 ```bash
 streamlit run app.py
 ```
 
-## Usage
+You should now see the chatbot interface in your browser at `http://localhost:8501`.
 
-1. **Upload Documents**: Use the sidebar to upload PDF, CSV, TXT, or image files
-2. **Process Documents**: Click "Process Documents" to extract text and create embeddings
-3. **Ask Questions**: Type your questions in the chat interface
-4. **Get AI Responses**: The system will find relevant documents and generate answers
+---
 
-## Project Structure
+## 💾 Supabase Setup (with pgvector)
+
+Run the following SQL in your Supabase SQL Editor:
+
+```sql
+create extension if not exists vector;
+
+create table documents (
+  id serial primary key,
+  content text,
+  embedding vector(384),
+  metadata jsonb,
+  created_at timestamp with time zone default now()
+);
+
+create index on documents using ivfflat (embedding vector_cosine_ops);
+
+create or replace function match_documents(
+  query_embedding vector(384),
+  match_threshold float,
+  match_count int
+)
+returns setof documents as $$
+  select * from documents
+  where embedding <=> query_embedding < match_threshold
+  order by embedding <=> query_embedding
+  limit match_count;
+$$ language sql stable;
+```
+
+---
+
+## 🔑 OpenRouter API Setup
+
+1. Visit [https://openrouter.ai](https://openrouter.ai)
+2. Create a free account
+3. Generate an API key
+4. Add it to your `.env`:
+   ```
+   OPENROUTER_API_KEY=sk-openrouter-xxxx
+   ```
+
+---
+
+## 📝 File Structure
 
 ```
-python_rag_project/
-├── app.py                 # Main Streamlit application
-├── document_processor.py  # Document processing and text extraction
-├── vector_store.py       # Supabase vector database integration
-├── rag_engine.py         # RAG logic with OpenRouter API
-├── requirements.txt      # Python dependencies
-└── README.md            # This file
+📁 intelligent-rag-chatbot/
+│
+├── app.py                  # Main Streamlit app
+├── document_processor.py   # Handles file reading & summarization
+├── vector_store.py         # Handles Supabase vector logic
+├── rag_engine.py           # Handles LLM response logic
+├── requirements.txt
+├── .env                    # Environment variables (ignored)
+├── .env.example            # Template for collaborators
+├── Screenshot/             # Contains UI screenshots
+│   ├── Chatbot.PNG
+│   ├── Fie_Uploading.PNG
+│   └── RAG.PNG
 ```
 
-## Configuration
+---
 
-- **OpenRouter API Key**: Already configured in the code
-- **Model Selection**: Choose from Claude, Gemini, or other models
-- **Chunk Size**: Adjustable text chunking for better retrieval
-- **Similarity Threshold**: Fine-tune document relevance
+## 🧪 Example Use
 
-## Testing with Loan Approval Dataset
+> 🙋 “What is this dataset about?”  
+> 🤖 “The dataset contains information about loan applications, including applicant, loan amount, and property details. It may be used for ML or analysis.”
 
-The system has been tested with the Loan Approval Prediction dataset from Kaggle, demonstrating its effectiveness in decision-support scenarios.
+---
 
-## Deployment
+## 🚀 Deployment Options
 
-### Streamlit Community Cloud
+You can deploy this app on:
 
-1. Push your code to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repository
-4. Set environment variables in the app settings
-5. Deploy!
+- [Streamlit Cloud](https://streamlit.io/cloud)
+- [Render](https://render.com/)
+- [Vercel (via API backend + UI)](https://vercel.com/)
+- Self-hosted with `ngrok`, Docker, or VM
 
-### Other Platforms
+---
 
-- **Heroku**: Add `Procfile` with `web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`
-- **Railway**: Direct deployment with automatic environment detection
-- **Google Cloud Run**: Containerize with Docker
+## 🛡️ .env.example
 
-## Troubleshooting
+```env
+# .env.example
+OPENROUTER_API_KEY=your_openrouter_api_key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-1. **Supabase Connection Issues**: Verify URL and API key
-2. **OCR Not Working**: Ensure Tesseract is properly installed
-3. **Memory Issues**: Reduce batch size for large documents
-4. **API Rate Limits**: Implement retry logic if needed
+---
 
-## License
+## 📜 License
 
-MIT License - Feel free to use and modify for your projects!
+This project is licensed under the MIT License.
+
+---
+
+## 🙌 Acknowledgements
+
+- [Supabase](https://supabase.com)
+- [OpenRouter](https://openrouter.ai)
+- [Streamlit](https://streamlit.io)
+- [Sentence Transformers](https://www.sbert.net)
+
+---
+
+## 👨‍💻 Author
+
+**Shubh Marwadi**  
+
