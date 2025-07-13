@@ -5,18 +5,21 @@ from PIL import Image
 import PyPDF2
 from typing import List, Dict
 import hashlib
+from dotenv import load_dotenv
+load_dotenv()
+
 
 class DocumentProcessor:
     def __init__(self):
-        self.supported_formats = ['.pdf', '.csv', '.txt', '.png', '.jpg', '.jpeg']
-    
+        self.supported_formats = [ '.csv', '.txt',]
+
     def process_document(self, file_path: str, filename: str) -> List[Dict]:
         """Process a document and return chunks of text with metadata."""
         file_extension = os.path.splitext(filename)[1].lower()
-        
+
         if file_extension not in self.supported_formats:
             raise ValueError(f"Unsupported file format: {file_extension}")
-        
+
         # Extract text based on file type
         if file_extension == '.pdf':
             text = self._extract_pdf_text(file_path)
@@ -28,10 +31,21 @@ class DocumentProcessor:
             text = self._extract_image_text(file_path)
         else:
             raise ValueError(f"No processor available for {file_extension}")
-        
+
+        # For CSV, prepend document-level overview
+        if file_extension == '.csv':
+            try:
+                df = pd.read_csv(file_path)
+                summary_chunk = f"This CSV dataset contains {df.shape[0]} rows and {df.shape[1]} columns. " \
+                                f"The columns are: {', '.join(df.columns.tolist())}. " \
+                                f"It might be used for data analysis, ML tasks, or visualization."
+                text = summary_chunk + "\n\n" + text
+            except Exception as e:
+                print(f"Error generating summary chunk: {str(e)}")
+
         # Split text into chunks
         chunks = self._split_text_into_chunks(text, chunk_size=1000, overlap=200)
-        
+
         # Create document chunks with metadata
         document_chunks = []
         for i, chunk in enumerate(chunks):
@@ -45,7 +59,7 @@ class DocumentProcessor:
                     'document_id': self._generate_document_id(filename)
                 }
             })
-        
+
         return document_chunks
 
     def _extract_pdf_text(self, file_path: str) -> str:
@@ -73,45 +87,54 @@ class DocumentProcessor:
                 raise Exception(f"OCR fallback failed: {str(ocr_error)}")
 
         return text
-    
+
     def _extract_csv_text(self, file_path: str) -> str:
-        """Extract text from CSV file."""
+        """Extract and summarize CSV file content for better embeddings."""
         try:
             df = pd.read_csv(file_path)
-            text = f"Dataset Information:\n"
-            text += f"Columns: {', '.join(df.columns.tolist())}\n"
-            text += f"Shape: {df.shape[0]} rows, {df.shape[1]} columns\n\n"
-            
-            text += "Column Descriptions:\n"
+
+            text = f"📊 Dataset Overview:\n"
+            text += f"- File contains {df.shape[0]} rows and {df.shape[1]} columns.\n"
+            text += f"- Column names: {', '.join(df.columns.tolist())}\n"
+
+            text += "\n📈 Column Details:\n"
             for col in df.columns:
-                text += f"- {col}: {df[col].dtype}, "
-                if df[col].dtype == 'object':
+                dtype = df[col].dtype
+                text += f"• {col} (type: {dtype}) - "
+
+                if dtype == 'object':
                     unique_vals = df[col].nunique()
-                    text += f"{unique_vals} unique values"
+                    text += f"{unique_vals} unique values, examples: {df[col].dropna().unique()[:3].tolist()}"
                 else:
-                    text += f"range: {df[col].min()} to {df[col].max()}"
+                    text += f"min: {df[col].min()}, max: {df[col].max()}, mean: {df[col].mean():.2f}"
                 text += "\n"
-            
-            text += f"\nSample Data (first 5 rows):\n"
-            text += df.head().to_string()
-            
-            numeric_cols = df.select_dtypes(include=['number']).columns
+
+            # Add a sample of data
+            text += "\n🧾 Sample Rows:\n"
+            text += df.head(5).to_string(index=False)
+
+            # Add numerical summary
+            numeric_cols = df.select_dtypes(include='number').columns
             if len(numeric_cols) > 0:
-                text += f"\n\nStatistical Summary:\n"
+                text += "\n\n📊 Summary Statistics (numeric columns only):\n"
                 text += df[numeric_cols].describe().to_string()
-            
+
             return text
+
         except Exception as e:
             raise Exception(f"Error extracting CSV text: {str(e)}")
-    
+
     def _extract_txt_text(self, file_path: str) -> str:
-        """Extract text from TXT file."""
+        """Extract text from TXT file with fallback."""
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read()
+                text = file.read().strip()
+                if not text or len(text) < 100:
+                    return "This TXT file contains very little content or is empty."
+                return f"📝 File Content:\n{text}"
         except Exception as e:
             raise Exception(f"Error extracting TXT text: {str(e)}")
-    
+
     def _extract_image_text(self, file_path: str) -> str:
         """Extract text from image using OCR."""
         try:
@@ -120,40 +143,40 @@ class DocumentProcessor:
             return text
         except Exception as e:
             raise Exception(f"Error extracting image text: {str(e)}")
-    
+
     def _split_text_into_chunks(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks."""
         if len(text) <= chunk_size:
             return [text]
-        
+
         chunks = []
         start = 0
-        
+
         while start < len(text):
             end = start + chunk_size
-            
+
             if end < len(text):
                 last_period = text.rfind('.', start, end)
                 last_newline = text.rfind('\n', start, end)
                 last_space = text.rfind(' ', start, end)
-                
+
                 if last_period > start + chunk_size * 0.7:
                     end = last_period + 1
                 elif last_newline > start + chunk_size * 0.7:
                     end = last_newline
                 elif last_space > start + chunk_size * 0.7:
                     end = last_space
-            
+
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
-            
+
             start = end - overlap
             if start >= len(text):
                 break
-        
+
         return chunks
-    
+
     def _generate_document_id(self, filename: str) -> str:
         """Generate a unique document ID based on filename."""
         return hashlib.md5(filename.encode()).hexdigest()[:8]
